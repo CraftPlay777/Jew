@@ -1,17 +1,15 @@
-# Jew Browser 1.1
+# Jew
 
-Navegador Android basado en WebView y Java.
+Navegador Android ligero basado en WebView.
 
-## Incluye
-- Interfaz reorganizada con controles táctiles de tamaño uniforme.
-- Pantalla de inicio personalizada con accesos rápidos.
-- Tema claro/oscuro persistente.
-- Buscador configurable: Google o DuckDuckGo.
-- Pestañas, marcadores e historial.
-- Descargas mediante Android DownloadManager.
-- Selector de archivos web y progreso de carga.
+## Funciones
+- Navegación por pestañas y pantalla de inicio con accesos directos.
+- Favoritos con estrella amarilla persistente y opción para quitarlos.
+- Temas claro, oscuro y según el sistema.
+- Buscador Google, DuckDuckGo o plantilla personalizada.
+- Descargas integradas: estado, progreso, abrir, compartir, cancelar y eliminar.
+- Historial de navegación.
+- Interfaz con iconos dibujados localmente, sin bibliotecas externas.
 
 ## Compilar
-GitHub Actions: ejecutar `Build Jew APK` y descargar el artefacto `Jew-debug-apk`.
-
-Paquete: `com.CraftPlay777.jew`
+El workflow de GitHub Actions `Build Jew APK` compila `:app:assembleDebug`.

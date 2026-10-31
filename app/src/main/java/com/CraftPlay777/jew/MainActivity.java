@@ -123,10 +123,10 @@ public class MainActivity extends Activity {
                 catch(Exception ex){ fileCallback=null;cb.onReceiveValue(null);return false; }
             }
         });
-        web.setDownloadListener((url,userAgent,contentDisposition,mimeType,contentLength)->{
+        web.setDownloadListener((downloadUrl,userAgent,contentDisposition,mimeType,contentLength)->{
             if(!url.startsWith("http://") && !url.startsWith("https://"))return;
             try {
-                DownloadManager.Request r=new DownloadManager.Request(Uri.parse(url));
+                DownloadManager.Request r=new DownloadManager.Request(Uri.parse(downloadUrl));
                 r.addRequestHeader("User-Agent", userAgent == null ? "" : userAgent);
                 String cookie=CookieManager.getInstance().getCookie(url);
                 if(cookie!=null)r.addRequestHeader("Cookie",cookie);

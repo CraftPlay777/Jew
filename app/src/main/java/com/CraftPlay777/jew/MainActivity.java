@@ -4,6 +4,7 @@ import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.DownloadManager;
+import android.app.Dialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -38,7 +39,6 @@ import android.webkit.WebViewClient;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.PopupMenu;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -107,7 +107,7 @@ public class MainActivity extends Activity {
         prefs = getSharedPreferences("jew", MODE_PRIVATE);
         downloadManager = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
         searchEngine = prefs.getString("search_engine", "Google");
-        themeMode = prefs.getString("theme_mode", prefs.getBoolean("dark", false) ? "dark" : "light");
+        themeMode = prefs.getString("theme_mode", "system");
         applyPalette();
         buildInterface();
         newTab(HOME);
@@ -291,12 +291,16 @@ public class MainActivity extends Activity {
     private String displayUrl(WebView web) {
         if (web == null || isHome(web)) return "";
         String url = web.getUrl();
-        return url == null ? "" : url;
+        if (url == null || url.isEmpty() || "about:blank".equalsIgnoreCase(url)
+                || "about:blank#blocked".equalsIgnoreCase(url)
+                || url.startsWith("data:text/html")) return "";
+        return url;
     }
 
     private void updateAddress(WebView web) {
         if (address == null || web == null) return;
-        address.setText(displayUrl(web));
+        String value = displayUrl(web);
+        if (!value.equals(address.getText().toString())) address.setText(value);
         address.setHint("Search/URL");
     }
 
@@ -540,7 +544,8 @@ public class MainActivity extends Activity {
     }
 
     private void addHistory(String url, String title) {
-        if (url == null || url.isEmpty() || url.startsWith(HOME_BASE) || HOME.equals(url)) return;
+        if (url == null || url.isEmpty() || url.startsWith(HOME_BASE) || HOME.equals(url)
+                || "about:blank".equalsIgnoreCase(url) || "about:blank#blocked".equalsIgnoreCase(url)) return;
         JSONArray old = stored("history");
         JSONArray next = new JSONArray();
         next.put(historyItem(url, title));
@@ -715,14 +720,18 @@ public class MainActivity extends Activity {
             return;
         }
         String[] labels = new String[items.length()];
-        for (int i = 0; i < labels.length; i++) labels[i] = items.optString(i);
-        new AlertDialog.Builder(this).setTitle("Favoritos").setItems(labels, (dialog, which) -> {
+        String[] icons = new String[items.length()];
+        for (int i = 0; i < labels.length; i++) {
+            labels[i] = hostTitle(items.optString(i));
+            icons[i] = "★";
+        }
+        showStyledMenu("Favoritos", labels, icons, -1, which -> {
             if (active() != null) {
                 currentScreen = SCREEN_NONE;
                 restoreActiveTab();
-                active().loadUrl(labels[which]);
+                active().loadUrl(items.optString(which));
             }
-        }).setNeutralButton("Administrar", (dialog, which) -> showBookmarks()).setNegativeButton("Cerrar", null).show();
+        });
     }
 
     private void showBookmarks() {
@@ -874,13 +883,14 @@ public class MainActivity extends Activity {
             if (active() != null) active().loadUrl(url);
         });
         item.setOnLongClickListener(v -> {
-            new AlertDialog.Builder(this).setItems(new String[]{"Abrir", "Quitar del historial"}, (d, which) -> {
-                if (which == 0) {
-                    currentScreen = SCREEN_NONE;
-                    restoreActiveTab();
-                    if (active() != null) active().loadUrl(url);
-                } else removeHistoryUrl(url);
-            }).show();
+            showStyledMenu(title, new String[]{"Abrir página", "Quitar del historial"},
+                    new String[]{"↗", "⌫"}, -1, which -> {
+                        if (which == 0) {
+                            currentScreen = SCREEN_NONE;
+                            restoreActiveTab();
+                            if (active() != null) active().loadUrl(url);
+                        } else removeHistoryUrl(url);
+                    });
             return true;
         });
         return item;
@@ -1159,66 +1169,125 @@ public class MainActivity extends Activity {
         }
     }
 
+    private interface MenuSelection { void onSelect(int index); }
+
+    private void showStyledMenu(String title, String[] labels, String[] icons, int selected, MenuSelection selection) {
+        Dialog dialog = new Dialog(this);
+        LinearLayout card = column();
+        card.setPadding(dp(16), dp(13), dp(16), dp(12));
+        GradientDrawable cardBg = shape(panel, 22);
+        cardBg.setStroke(dp(1), line);
+        card.setBackground(cardBg);
+
+        TextView heading = text(title, 17, fg);
+        heading.setGravity(Gravity.CENTER_VERTICAL | Gravity.LEFT);
+        heading.setTypeface(null, Typeface.BOLD);
+        heading.setPadding(dp(5), dp(4), dp(5), dp(12));
+        card.addView(heading, new LinearLayout.LayoutParams(-1, dp(38)));
+
+        for (int i = 0; i < labels.length; i++) {
+            final int index = i;
+            LinearLayout item = row();
+            item.setPadding(dp(8), 0, dp(9), 0);
+            item.setBackground(shape(i == selected ? (dark ? 0x443F72D8 : 0x22315FEA) : panel, 13));
+            TextView icon = text(icons != null && i < icons.length ? icons[i] : "•", 19, accent);
+            item.addView(icon, new LinearLayout.LayoutParams(dp(38), -1));
+            TextView label = text(labels[i], 14, fg);
+            label.setGravity(Gravity.CENTER_VERTICAL | Gravity.LEFT);
+            item.addView(label, new LinearLayout.LayoutParams(0, -1, 1));
+            if (i == selected) {
+                TextView check = text("✓", 17, accent);
+                item.addView(check, new LinearLayout.LayoutParams(dp(28), -1));
+            }
+            item.setOnClickListener(v -> {
+                dialog.dismiss();
+                if (selection != null) selection.onSelect(index);
+            });
+            card.addView(item, new LinearLayout.LayoutParams(-1, dp(48)));
+            if (i < labels.length - 1) {
+                View divider = new View(this);
+                divider.setBackgroundColor(line);
+                LinearLayout.LayoutParams dpLine = new LinearLayout.LayoutParams(-1, dp(1));
+                dpLine.setMargins(dp(8), dp(5), dp(8), dp(5));
+                card.addView(divider, dpLine);
+            }
+        }
+        TextView close = text("Cerrar", 13, muted);
+        close.setGravity(Gravity.CENTER);
+        close.setOnClickListener(v -> dialog.dismiss());
+        LinearLayout.LayoutParams closeLp = new LinearLayout.LayoutParams(-1, dp(40));
+        closeLp.topMargin = dp(7);
+        card.addView(close, closeLp);
+
+        dialog.setContentView(card);
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawableResource(android.R.color.transparent);
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            android.view.WindowManager.LayoutParams attrs = window.getAttributes();
+            attrs.dimAmount = 0.42f;
+            window.setAttributes(attrs);
+            window.setLayout(getResources().getDisplayMetrics().widthPixels - dp(38), ViewGroup.LayoutParams.WRAP_CONTENT);
+        }
+        dialog.show();
+        if (window != null) window.setLayout(getResources().getDisplayMetrics().widthPixels - dp(38), ViewGroup.LayoutParams.WRAP_CONTENT);
+    }
+
     private void menu(View anchor) {
-        PopupMenu popup = new PopupMenu(this, anchor);
         String[] options = {"Nueva pestaña", "Historial", "Favoritos", "Descargas", "Recargar página", "Configuración"};
-        for (String option : options) popup.getMenu().add(option);
-        popup.setOnMenuItemClickListener(item -> {
-            String option = item.getTitle().toString();
+        String[] icons = {"＋", "◷", "★", "⇩", "⟳", "⚙"};
+        showStyledMenu("Menú", options, icons, -1, which -> {
             WebView web = active();
-            switch (option) {
-                case "Nueva pestaña": newTab(HOME); break;
-                case "Historial": showHistory(); break;
-                case "Favoritos": showBookmarks(); break;
-                case "Descargas": showDownloads(); break;
-                case "Recargar página":
+            switch (which) {
+                case 0: newTab(HOME); break;
+                case 1: showHistory(); break;
+                case 2: showBookmarks(); break;
+                case 3: showDownloads(); break;
+                case 4:
                     if (web != null) {
                         currentScreen = SCREEN_NONE;
                         restoreActiveTab();
                         if (isHome(web)) showHome(); else web.reload();
                     }
                     break;
-                case "Configuración": settings(); break;
+                case 5: settings(); break;
             }
-            return true;
         });
-        popup.show();
     }
 
     private void settings() {
         String[] options = {"Apariencia", "Buscador"};
-        new AlertDialog.Builder(this).setTitle("Configuración").setItems(options, (dialog, which) -> {
-            if (which == 0) appearanceSettings(); else searchSettings();
-        }).setNegativeButton("Cerrar", null).show();
+        showStyledMenu("Configuración", options, new String[]{"◐", "⌕"}, -1,
+                which -> { if (which == 0) appearanceSettings(); else searchSettings(); });
     }
 
     private void appearanceSettings() {
         String[] themes = {"Según el sistema", "Claro", "Oscuro"};
+        String[] icons = {"◐", "☀", "☾"};
         int checked = "system".equals(themeMode) ? 0 : "light".equals(themeMode) ? 1 : 2;
-        new AlertDialog.Builder(this).setTitle("Tema de Jew").setSingleChoiceItems(themes, checked, (dialog, which) -> {
+        showStyledMenu("Tema de Jew", themes, icons, checked, which -> {
             themeMode = which == 0 ? "system" : which == 1 ? "light" : "dark";
             prefs.edit().putString("theme_mode", themeMode).putBoolean("dark", "dark".equals(themeMode)).apply();
-            dialog.dismiss();
             String previousScreen = currentScreen;
             applyPalette();
             rebuildInterface(previousScreen);
-        }).setNegativeButton("Cerrar", null).show();
+        });
     }
 
     private void searchSettings() {
         String[] engines = {"Google", "DuckDuckGo", "Personalizado"};
+        String[] icons = {"G", "◉", "✎"};
         int checked = "DuckDuckGo".equals(searchEngine) ? 1 : "Personalizado".equals(searchEngine) ? 2 : 0;
-        new AlertDialog.Builder(this).setTitle("Buscador predeterminado").setSingleChoiceItems(engines, checked, (dialog, which) -> {
+        showStyledMenu("Buscador predeterminado", engines, icons, checked, which -> {
             if (which < 2) {
                 searchEngine = engines[which];
                 prefs.edit().putString("search_engine", searchEngine).remove("search_template").apply();
-                dialog.dismiss();
             } else {
                 EditText input = new EditText(this);
                 input.setSingleLine(true);
                 input.setText(prefs.getString("search_template", "https://example.com/search?q={query}"));
                 input.setHint("https://sitio.com/search?q={query}");
-                new AlertDialog.Builder(this).setTitle("URL de búsqueda")
+                android.app.AlertDialog editor = new AlertDialog.Builder(this).setTitle("URL de búsqueda")
                         .setMessage("Usa {query} donde debe insertarse el texto")
                         .setView(input)
                         .setPositiveButton("Guardar", (d, n) -> {
@@ -1227,10 +1296,19 @@ public class MainActivity extends Activity {
                                 searchEngine = "Personalizado";
                                 prefs.edit().putString("search_engine", searchEngine).putString("search_template", template).apply();
                             } else Toast.makeText(this, "La URL debe contener {query}", Toast.LENGTH_LONG).show();
-                        }).setNegativeButton("Cancelar", null).show();
-                dialog.dismiss();
+                        }).setNegativeButton("Cancelar", null).create();
+                editor.setOnShowListener(d -> styleDialogWindow(editor));
+                editor.show();
             }
-        }).setNegativeButton("Cerrar", null).show();
+        });
+    }
+
+    private void styleDialogWindow(AlertDialog dialog) {
+        Window window = dialog.getWindow();
+        if (window == null) return;
+        GradientDrawable background = shape(panel, 20);
+        background.setStroke(dp(1), line);
+        window.setBackgroundDrawable(background);
     }
 
     private void rebuildInterface(String previousScreen) {
